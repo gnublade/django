@@ -352,8 +352,37 @@ def reverse(viewname, urlconf=None, args=None, kwargs=None, prefix=None, current
                 else:
                     raise NoReverseMatch("%s is not a registered namespace" % key)
 
+    # This is a hack to get namespaced URLs to reverse when the base
+    # has named parameters (may work for positional, but not tested at all).
+    pattern = prefix
+    possibility = normalize(pattern) # The magical regex reverse function!
+    # Below copied from _populate above and slightly altered
+    for result, params in possibility:
+        copy_args = [v for v in args]
+        copy_kwargs = kwargs.copy()
+        if args:
+            if len(args) < len(params):
+                continue
+            # Pop arguments to ensure the right number are passed on to the
+            # resolver.
+            unicode_args = [force_unicode(copy_args.pop(0)) for v in params]
+            candidate =  result % dict(zip(params, unicode_args))
+        else:
+            if not set(params).issubset(set(kwargs.keys())):
+                continue
+            # Pop arguments to ensure the right number are passed on to the
+            # resolver.
+            unicode_kwargs = dict([(k, force_unicode(copy_kwargs.pop(k))) for k in params])
+            candidate = result % unicode_kwargs
+        if re.search(u'^%s' % pattern, candidate, re.UNICODE):
+            prefix = candidate
+        else:
+            raise NoReverseMatch(
+                "Reverse for '%s' with arguments '%s' and keyword arguments\
+                '%s' not found." % (pattern, args, kwargs))
+
     return iri_to_uri(u'%s%s' % (prefix, resolver.reverse(view,
-            *args, **kwargs)))
+            *copy_args, **copy_kwargs)))
 
 def clear_url_caches():
     global _resolver_cache
